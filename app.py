@@ -12,7 +12,7 @@ import pandas as pd
 import altair as alt
 import streamlit as st
 
-from calc import DEFAULTS, COLORS, compute, band
+from calc import DEFAULTS, COLORS, TECHNOLOGIES, compute, band
 
 # ── Seitenkonfiguration ───────────────────────────────────────────────────
 st.set_page_config(
@@ -33,13 +33,13 @@ FIELDS = {
     "spread": ("nutzbarer Spread", "ct/kWh", 0.5, 1),
     "delta_kw": ("Lastspitzen-Kappung", "kW", 1.0, 0),
     "leistungspreis": ("Leistungspreis", "€/kW·a", 5.0, 0),
-    "invest": ("Investition gesamt", "€", 500.0, 0),
+    "preis_kwh": ("Speicherpreis", "€/kWh", 10.0, 0),
+    "invest_rest": ("Übrige Investition (PV, WR, Montage)", "€", 500.0, 0),
     "pv_yield": ("PV-Ertrag", "kWh/kWp", 10.0, 0),
     "ev_ohne": ("Eigenverbrauch o. Speicher", "%", 1.0, 0),
     "ev_mit": ("Eigenverbrauch m. Speicher", "%", 1.0, 0),
     "zyklen": ("Ladezyklen/Jahr", "Zyk.", 10.0, 0),
     "rt": ("Round-Trip-Wirkungsgrad", "%", 1.0, 0),
-    "invest_speicher": ("Speicher-Anteil Investition", "€", 500.0, 0),
     "degr_zyklen": ("Zyklenlebensdauer", "Zyk.", 500.0, 0),
     "n14a_eur": ("§14a-Reduzierung", "€/a", 10.0, 0),
     "iab_quote": ("IAB-Quote (§7g)", "%", 5.0, 0),
@@ -83,6 +83,7 @@ mode = "gewerbe" if "Gewerbe" in mode_label else "haushalt"
 # Bei Moduswechsel die Zahlen-Eingaben auf die Modus-Defaults zurücksetzen
 if st.session_state.get("_mode") != mode:
     st.session_state["_mode"] = mode
+    st.session_state["_tech"] = None  # Technik-Presets neu anwenden
     for k in DEFAULTS[mode]:
         st.session_state.pop(k, None)
 for k, v in DEFAULTS[mode].items():
@@ -107,6 +108,21 @@ t = {
     "dyn": st.session_state["dyn"], "n14a": st.session_state.get("n14a", False),
 }
 
+# ── Sidebar: Speichertechnik ──────────────────────────────────────────────
+# Setzt zellchemie-abhängige Startwerte (Wirkungsgrad, Zyklenlebensdauer),
+# bevor die zugehörigen Zahlenfelder instanziiert werden. Bleibt editierbar.
+st.sidebar.markdown("### Speichertechnik")
+tech = st.sidebar.selectbox(
+    "Zellchemie", list(TECHNOLOGIES),
+    format_func=lambda k: TECHNOLOGIES[k]["label"],
+    key="tech", disabled=not t["speicher"],
+)
+if st.session_state.get("_tech") != tech:
+    st.session_state["_tech"] = tech
+    st.session_state["rt"] = float(TECHNOLOGIES[tech]["rt"])
+    st.session_state["degr_zyklen"] = float(TECHNOLOGIES[tech]["degr_zyklen"])
+st.sidebar.caption(TECHNOLOGIES[tech]["note"])
+
 # ── Sidebar: Eckdaten ─────────────────────────────────────────────────────
 st.sidebar.markdown("### Eckdaten")
 num_input("verbrauch")
@@ -121,7 +137,9 @@ if t["speicher"] and t["dyn"]:
 if is_g and t["speicher"]:
     num_input("delta_kw")
     num_input("leistungspreis")
-num_input("invest")
+if t["speicher"]:
+    num_input("preis_kwh")
+num_input("invest_rest")
 
 with st.sidebar.expander("Annahmen anzeigen"):
     if t["pv"]:
@@ -132,7 +150,6 @@ with st.sidebar.expander("Annahmen anzeigen"):
         num_input("zyklen")
         num_input("rt")
     if t["speicher"]:
-        num_input("invest_speicher")
         num_input("degr_zyklen")
     if (not is_g) and t["speicher"] and t["n14a"]:
         num_input("n14a_eur")
@@ -173,6 +190,11 @@ m2.metric("Amortisation", pay, pay_band, delta_color="off")
 tax_note = (f"nach IAB −{eur(r['steuervorteil'])}" if r["steuervorteil"] > 0
             else "ohne Steuervorteil")
 m3.metric("Eff. Investition", eur(r["eff_invest"]), tax_note, delta_color="off")
+if t["speicher"]:
+    m3.caption(f"Gesamt {eur(r['invest'])} · Speicher {eur(r['invest_speicher'])} "
+               f"({de(st.session_state['preis_kwh'])} €/kWh)")
+else:
+    m3.caption(f"Gesamt {eur(r['invest'])}")
 
 st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
@@ -240,6 +262,13 @@ if t["pv"] and t["speicher"] and t["dyn"]:
         f"<span style='color:{COLORS['eigen']}'>■</span> PV-Verschiebung und Arbitrage teilen sich "
         "denselben Speicher. Beide Hebel sind hier unabhängig geschätzt — real konkurrieren sie um "
         "Zyklen, die Summe ist daher eher eine Obergrenze.")
+if t["speicher"] and tech == "natrium":
+    notes.append(
+        f"<span style='color:{COLORS['arbitrage']}'>■</span> **Natrium-Ionen (Na⁺)** läuft 2026 erst "
+        "hoch: Zyklen- und Wirkungsgrad-Werte sind Herstellerangaben (CATL Naxtra, Revolta), "
+        "unabhängig noch nicht bestätigt (IRENA: weniger ausgereift als Li-Ion). Der Kostenvorteil "
+        "ist projiziert, nicht garantiert — setze deinen realen Angebotspreis ein. Heim-Na⁺-Systeme "
+        "haben oft geringere Lade-/Entladeleistung, relevant fürs Peak Shaving.")
 notes.append(
     f"<span style='color:{COLORS['degr']}'>■</span> Erstordnungs-Modell zur Einordnung, keine "
     "verbindliche Auslegung. Prüfe die Annahmen links — sie bestimmen das Ergebnis.")

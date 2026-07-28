@@ -28,7 +28,7 @@ DEFAULTS = {
         "verbrauch": 4500, "bezug": 32.0, "einspeise": 8.0,
         "pv_kwp": 10, "pv_yield": 950, "ev_ohne": 30, "ev_mit": 65,
         "speicher_kwh": 10, "spread": 12.0, "zyklen": 220, "rt": 90,
-        "invest": 22000, "invest_speicher": 8000, "degr_zyklen": 6000,
+        "preis_kwh": 650, "invest_rest": 14000, "degr_zyklen": 6000,
         "n14a_eur": 130,
         "delta_kw": 0, "leistungspreis": 0, "steuersatz": 0, "iab_quote": 0,
     },
@@ -36,9 +36,24 @@ DEFAULTS = {
         "verbrauch": 300000, "bezug": 25.0, "einspeise": 7.0,
         "pv_kwp": 100, "pv_yield": 950, "ev_ohne": 45, "ev_mit": 70,
         "speicher_kwh": 100, "spread": 10.0, "zyklen": 300, "rt": 90,
-        "invest": 120000, "invest_speicher": 75000, "degr_zyklen": 6000,
+        "preis_kwh": 450, "invest_rest": 55000, "degr_zyklen": 6000,
         "n14a_eur": 0,
         "delta_kw": 40, "leistungspreis": 120, "steuersatz": 30, "iab_quote": 50,
+    },
+}
+
+# ── Speichertechnik: setzt zellchemie-abhängige Startwerte (editierbar) ────
+# Werte sind bewusst konservativ und als Startpunkt gedacht — Na⁺ läuft 2026
+# gerade erst hoch, Herstellerangaben sind noch nicht unabhängig bestätigt.
+TECHNOLOGIES = {
+    "lifepo": {
+        "label": "LiFePO₄ (LFP)", "rt": 92, "degr_zyklen": 6000,
+        "note": "ausgereift · Standard bei Heim- und Gewerbespeichern",
+    },
+    "natrium": {
+        "label": "Natrium-Ionen (Na⁺)", "rt": 92, "degr_zyklen": 8000,
+        "note": "aufkommend 2026 · z. B. CATL Naxtra, Revolta · Herstellerangaben "
+                "(bis 10.000+ Zyklen beworben), Preis/Garantie noch offen",
     },
 }
 
@@ -55,6 +70,10 @@ def compute(mode: str, t: dict, inp: dict) -> dict:
     ev_quote = inp["ev_mit"] if t.get("speicher") else inp["ev_ohne"]
     self_kwh = min(pv_prod * ev_quote / 100.0, inp["verbrauch"]) if t.get("pv") else 0.0
     surplus_kwh = max(pv_prod - self_kwh, 0.0)
+
+    # Investition aus Kapazität × €/kWh herleiten (erlaubt LFP-vs-Na⁺-Preisvergleich)
+    invest_speicher = inp["speicher_kwh"] * inp["preis_kwh"] if t.get("speicher") else 0.0
+    invest_total = invest_speicher + inp["invest_rest"]
 
     levers: list[dict] = []
 
@@ -101,7 +120,7 @@ def compute(mode: str, t: dict, inp: dict) -> dict:
     # Kostenzeile — Verschleiß / Degradation auf Arbitrage-Durchsatz
     lcos_ct = 0.0
     if t.get("speicher") and inp["degr_zyklen"] > 0 and inp["speicher_kwh"] > 0:
-        lcos_ct = inp["invest_speicher"] / (inp["degr_zyklen"] * inp["speicher_kwh"]) * 100.0
+        lcos_ct = invest_speicher / (inp["degr_zyklen"] * inp["speicher_kwh"]) * 100.0
         degr_cost = arb_kwh * lcos_ct / 100.0
         if degr_cost > 0:
             levers.append({
@@ -117,9 +136,9 @@ def compute(mode: str, t: dict, inp: dict) -> dict:
     # Investition & Steuer (IAB nur Gewerbe, einmalig — kein Jahres-Hebel)
     steuervorteil = 0.0
     if is_g and inp["iab_quote"] > 0 and inp["steuersatz"] > 0:
-        iab_betrag = inp["invest"] * (min(inp["iab_quote"], 50) / 100.0)
+        iab_betrag = invest_total * (min(inp["iab_quote"], 50) / 100.0)
         steuervorteil = iab_betrag * (inp["steuersatz"] / 100.0)
-    eff_invest = max(inp["invest"] - steuervorteil, 0.0)
+    eff_invest = max(invest_total - steuervorteil, 0.0)
     payback = eff_invest / net_annual if net_annual > 0 else inf
 
     return {
@@ -127,6 +146,7 @@ def compute(mode: str, t: dict, inp: dict) -> dict:
         "net_annual": net_annual, "eff_invest": eff_invest,
         "steuervorteil": steuervorteil, "payback": payback,
         "arb_kwh": arb_kwh, "lcos_ct": lcos_ct,
+        "invest": invest_total, "invest_speicher": invest_speicher,
     }
 
 
