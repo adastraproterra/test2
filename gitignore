@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtuelle Umgebungen
+.venv/
+venv/
+env/
+
+# Streamlit (lokale Secrets nie committen)
+.streamlit/secrets.toml
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
