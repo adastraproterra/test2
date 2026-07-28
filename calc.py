@@ -29,6 +29,7 @@ DEFAULTS = {
         "pv_kwp": 10, "pv_yield": 950, "ev_ohne": 30, "ev_mit": 65,
         "speicher_kwh": 10, "spread": 12.0, "zyklen": 220, "rt": 90,
         "preis_kwh": 650, "invest_rest": 14000, "degr_zyklen": 6000,
+        "arb_dauer_h": 2, "arb_capture": 85,
         "n14a_eur": 130,
         "delta_kw": 0, "leistungspreis": 0, "steuersatz": 0, "iab_quote": 0,
     },
@@ -37,6 +38,7 @@ DEFAULTS = {
         "pv_kwp": 100, "pv_yield": 950, "ev_ohne": 45, "ev_mit": 70,
         "speicher_kwh": 100, "spread": 10.0, "zyklen": 300, "rt": 90,
         "preis_kwh": 450, "invest_rest": 55000, "degr_zyklen": 6000,
+        "arb_dauer_h": 2, "arb_capture": 85,
         "n14a_eur": 0,
         "delta_kw": 40, "leistungspreis": 120, "steuersatz": 30, "iab_quote": 50,
     },
@@ -147,6 +149,53 @@ def compute(mode: str, t: dict, inp: dict) -> dict:
         "steuervorteil": steuervorteil, "payback": payback,
         "arb_kwh": arb_kwh, "lcos_ct": lcos_ct,
         "invest": invest_total, "invest_speicher": invest_speicher,
+    }
+
+
+def price_stats(prices: list[float]) -> dict:
+    """Kennzahlen der Spotpreis-Reihe (€/MWh)."""
+    xs = [p for p in prices if p is not None]
+    n = len(xs)
+    if n == 0:
+        return {"n": 0}
+    return {
+        "n": n,
+        "min": min(xs),
+        "max": max(xs),
+        "mean": sum(xs) / n,
+        "negativ": sum(1 for p in xs if p < 0),
+    }
+
+
+def spread_from_prices(prices: list[float], dur_h: float = 2.0,
+                       capture: float = 0.85, step_min: int = 15) -> dict | None:
+    """Leitet den kapturierbaren Arbitrage-Spread (ct/kWh) aus echten Spotpreisen ab.
+
+    Modell: ein Zyklus pro Tag, perfekte Voraussicht, begrenzt auf ein Lade-/
+    Entladefenster von `dur_h` Stunden (die reale Entladedauer des Speichers),
+    anschließend mit `capture` (<1) gegen die Perfect-Foresight-Illusion gedämpft.
+    Der gedämpfte Wert ersetzt den pauschalen Spread im Arbitrage-Hebel.
+    """
+    per_day = int(24 * 60 / step_min)          # 96 Viertelstunden
+    w = max(1, round(dur_h * 60 / step_min))    # Fensterbreite in Intervallen
+    daily = []
+    for i in range(0, len(prices) - per_day + 1, per_day):
+        day = sorted(p for p in prices[i:i + per_day] if p is not None)
+        if len(day) < 2 * w:
+            continue
+        low = sum(day[:w]) / w
+        high = sum(day[-w:]) / w
+        daily.append(high - low)             # €/MWh
+    if not daily:
+        return None
+    mean_mwh = sum(daily) / len(daily)
+    spread_ct = capture * mean_mwh / 10.0     # €/MWh → ct/kWh, gedämpft
+    return {
+        "spread_ct": spread_ct,
+        "mean_daily_mwh": mean_mwh,
+        "days": len(daily),
+        "dur_h": dur_h,
+        "capture": capture,
     }
 
 

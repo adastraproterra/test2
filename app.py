@@ -8,11 +8,26 @@ Lastgang zu bestätigende Kappung) offen ausgewiesen.
 Start lokal:   streamlit run app.py
 """
 
+import io
+
 import pandas as pd
 import altair as alt
 import streamlit as st
 
-from calc import DEFAULTS, COLORS, TECHNOLOGIES, compute, band
+from calc import (DEFAULTS, COLORS, TECHNOLOGIES, compute, band,
+                  spread_from_prices, price_stats)
+
+
+@st.cache_data(show_spinner=False)
+def load_prices(file_bytes: bytes):
+    """Parst eine SMARD-Großhandelspreis-CSV (Viertelstunde) → DE/LU-Preisreihe (€/MWh)."""
+    df = pd.read_csv(io.BytesIO(file_bytes), sep=";", decimal=",", thousands=".",
+                     na_values=["-"], encoding="utf-8-sig")
+    col = next(c for c in df.columns if c.startswith("Deutschland/Luxemburg"))
+    prices = pd.to_numeric(df[col], errors="coerce").ffill().tolist()
+    von = str(df.iloc[0, 0]) if len(df) else ""
+    bis = str(df.iloc[-1, 1]) if len(df) else ""
+    return prices, von, bis
 
 # ── Seitenkonfiguration ───────────────────────────────────────────────────
 st.set_page_config(
@@ -41,6 +56,8 @@ FIELDS = {
     "zyklen": ("Ladezyklen/Jahr", "Zyk.", 10.0, 0),
     "rt": ("Round-Trip-Wirkungsgrad", "%", 1.0, 0),
     "degr_zyklen": ("Zyklenlebensdauer", "Zyk.", 500.0, 0),
+    "arb_dauer_h": ("Entladedauer Arbitrage", "h", 0.5, 1),
+    "arb_capture": ("Ausschöpfung (Foresight)", "%", 5.0, 0),
     "n14a_eur": ("§14a-Reduzierung", "€/a", 10.0, 0),
     "iab_quote": ("IAB-Quote (§7g)", "%", 5.0, 0),
     "steuersatz": ("Steuersatz", "%", 1.0, 0),
@@ -123,6 +140,34 @@ if st.session_state.get("_tech") != tech:
     st.session_state["degr_zyklen"] = float(TECHNOLOGIES[tech]["degr_zyklen"])
 st.sidebar.caption(TECHNOLOGIES[tech]["note"])
 
+# ── Sidebar: Preisdaten (optional) ────────────────────────────────────────
+# Leitet den Arbitrage-Spread aus echten SMARD-Spotpreisen ab (statt Pauschale).
+# Muss vor dem Spread-Feld laufen, um dessen Wert setzen zu können.
+st.sidebar.markdown("### Preisdaten (optional)")
+price_info = None
+if t["speicher"] and t["dyn"]:
+    up = st.sidebar.file_uploader("SMARD-Spotpreise (CSV, Viertelstunde)", type=["csv"])
+    use_csv = st.sidebar.checkbox("Spread aus Preisdaten ableiten",
+                                  value=True, disabled=up is None)
+    if up is not None:
+        try:
+            prices, von, bis = load_prices(up.getvalue())
+            sp = spread_from_prices(
+                prices, dur_h=st.session_state["arb_dauer_h"],
+                capture=st.session_state["arb_capture"] / 100.0)
+            pstat = price_stats(prices)
+            if sp:
+                price_info = {**sp, **pstat, "von": von, "bis": bis}
+                if use_csv:
+                    st.session_state["spread"] = round(sp["spread_ct"], 1)
+                st.sidebar.caption(
+                    f"{sp['days']} Tage · Ø {pstat['mean']:.0f} €/MWh · "
+                    f"{pstat['negativ']}× negativ · Spread {sp['spread_ct']:.1f} ct/kWh")
+        except Exception:
+            st.sidebar.error("CSV nicht lesbar — SMARD-Format (Viertelstunde) erwartet.")
+else:
+    st.sidebar.caption("Speicher + dyn. Tarif aktivieren, um Spotpreise zu nutzen.")
+
 # ── Sidebar: Eckdaten ─────────────────────────────────────────────────────
 st.sidebar.markdown("### Eckdaten")
 num_input("verbrauch")
@@ -149,6 +194,8 @@ with st.sidebar.expander("Annahmen anzeigen"):
     if t["speicher"] and t["dyn"]:
         num_input("zyklen")
         num_input("rt")
+        num_input("arb_dauer_h")
+        num_input("arb_capture")
     if t["speicher"]:
         num_input("degr_zyklen")
     if (not is_g) and t["speicher"] and t["n14a"]:
@@ -208,14 +255,15 @@ else:
                         "farbe": l["color"]} for l in r["levers"]])
     order = df["Hebel"].tolist()
     chart = (
-        alt.Chart(df).mark_bar(cornerRadius=3, height=22).encode(
+        alt.Chart(df).mark_bar(cornerRadius=3).encode(
             x=alt.X("Wert:Q", title="€ / Jahr"),
-            y=alt.Y("Hebel:N", sort=order, title=None),
+            y=alt.Y("Hebel:N", sort=order, title=None,
+                    axis=alt.Axis(labelLimit=240, labelOverlap=False, labelFontSize=12)),
             color=alt.Color("Hebel:N",
                             scale=alt.Scale(domain=order, range=df["farbe"].tolist()),
                             legend=None),
             tooltip=[alt.Tooltip("Hebel:N"), alt.Tooltip("Wert:Q", format=",.0f", title="€/a")],
-        ).properties(height=max(120, 44 * len(order)))
+        ).properties(height=max(140, 58 * len(order)))
     )
     st.altair_chart(chart, use_container_width=True)
 
@@ -251,6 +299,14 @@ if r["arb_kwh"] > 0:
         "Round-Trip-Verlusten gerechnet und um Verschleiß gekürzt. Die **AgNes-Reform** der "
         "Bundesnetzagentur könnte reine Arbitrage ab ~2030 über dynamische Netzentgelte belasten — "
         "der Hebel ist über die Laufzeit nicht garantiert.")
+if price_info:
+    notes.append(
+        f"<span style='color:{COLORS['arbitrage']}'>■</span> Der Spread von "
+        f"**{price_info['spread_ct']:.1f} ct/kWh** stammt aus deinen SMARD-Spotpreisen "
+        f"({price_info['days']} Tage, {price_info['negativ']} Viertelstunden negativ, "
+        f"Ø {price_info['mean']:.0f} €/MWh) — Modell: ein Zyklus/Tag, "
+        f"{price_info['dur_h']:.0f}-h-Fenster, {price_info['capture'] * 100:.0f}% Ausschöpfung "
+        "gegen die Perfect-Foresight-Illusion. Historische Spreads sind keine Garantie für künftige.")
 if is_g and t["speicher"] and inp["delta_kw"] > 0:
     notes.append(
         f"<span style='color:{COLORS['peak']}'>■</span> Die Lastspitzen-Kappung ist eine "
