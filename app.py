@@ -40,32 +40,28 @@ INK, MUTED, LINE, ACCENT = "#1B1E22", "#6A7078", "#E1E4E7", "#0E6E6E"
 # ── Feinschliff: Streamlit-Chrome ausblenden + dezente Politur ─────────────
 st.markdown(f"""
 <style>
-  /* Baukasten-Elemente entfernen, die nach "irgendeine Streamlit-App" aussehen */
   #MainMenu {{visibility: hidden;}}
   footer {{visibility: hidden;}}
   [data-testid="stToolbar"] {{visibility: hidden; height: 0;}}
   [data-testid="stDecoration"] {{display: none;}}
-  [data-testid="stStatusWidget"] {{visibility: hidden;}}
   .stDeployButton, [data-testid="stAppDeployButton"] {{display: none;}}
   header[data-testid="stHeader"] {{background: transparent;}}
 
-  /* Inhaltsbreite begrenzen und Kopfabstand setzen (bessere Lesbarkeit) */
   .block-container {{padding-top: 2.4rem; padding-bottom: 3rem; max-width: 1120px;}}
-
-  /* Kennzahlen ruhiger: große Zahl, gedämpftes Label */
   [data-testid="stMetricValue"] {{font-size: 1.9rem; letter-spacing: -0.02em; color: {INK};}}
   [data-testid="stMetricLabel"] p {{color: {MUTED}; font-size: 0.82rem;}}
-  [data-testid="stMetricDelta"] {{color: {MUTED};}}
-
-  /* Sidebar abgrenzen */
   section[data-testid="stSidebar"] {{border-right: 1px solid {LINE};}}
-  section[data-testid="stSidebar"] .block-container {{padding-top: 1.4rem;}}
-
-  /* Bedienelemente */
   .stButton > button {{border-radius: 8px; font-weight: 600;}}
-
-  /* Überschriften enger an deine Marke rücken */
   h2, h3 {{letter-spacing: -0.01em;}}
+
+  /* Responsiv: schmale Screens - Spalten stapeln, Größen zähmen */
+  @media (max-width: 640px) {{
+    .block-container {{padding-left: 0.8rem; padding-right: 0.8rem; padding-top: 1.4rem;}}
+    [data-testid="stMetricValue"] {{font-size: 1.4rem;}}
+    [data-testid="stHorizontalBlock"] {{flex-wrap: wrap; gap: 0.4rem;}}
+    [data-testid="stHorizontalBlock"] > div {{min-width: 100% !important;}}
+    h1 {{font-size: 1.35rem !important;}}
+  }}
 </style>
 """, unsafe_allow_html=True)
 # Feld-Metadaten: label, einheit, step, nachkommastellen
@@ -135,25 +131,20 @@ if st.session_state.get("_mode") != mode:
         st.session_state.pop(k, None)
 for k, v in DEFAULTS[mode].items():
     st.session_state.setdefault(k, float(v))
-for tk, tv in {"pv": True, "speicher": True, "dyn": True, "n14a": False}.items():
-    st.session_state.setdefault(tk, tv)
+
 
 is_g = mode == "gewerbe"
 
 # ── Sidebar: Bausteine ────────────────────────────────────────────────────
 st.sidebar.markdown("### Bausteine")
 c1, c2 = st.sidebar.columns(2)
-c1.checkbox("PV", key="pv")
-c2.checkbox("Speicher", key="speicher")
+pv_on       = c1.checkbox("PV", value=True, key="pv")
+speicher_on = c2.checkbox("Speicher", value=True, key="speicher")
 c3, c4 = st.sidebar.columns(2)
-c3.checkbox("Dyn. Tarif", key="dyn")
-if not is_g:
-    c4.checkbox("§14a", key="n14a")
+dyn_on      = c3.checkbox("Dyn. Tarif", value=True, key="dyn")
+n14a_on     = c4.checkbox("§14a", value=False, key="n14a") if not is_g else False
 
-t = {
-    "pv": st.session_state["pv"], "speicher": st.session_state["speicher"],
-    "dyn": st.session_state["dyn"], "n14a": st.session_state.get("n14a", False),
-}
+t = {"pv": pv_on, "speicher": speicher_on, "dyn": dyn_on, "n14a": n14a_on}
 
 # ── Sidebar: Speichertechnik ──────────────────────────────────────────────
 # Setzt zellchemie-abhängige Startwerte (Wirkungsgrad, Zyklenlebensdauer),
