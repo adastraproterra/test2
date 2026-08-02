@@ -1,0 +1,16 @@
+# .streamlit/config.toml
+# Muss im Ordner  .streamlit/  neben app.py liegen (gleiche Ebene wie app.py, calc.py).
+# Farben entsprechen exakt deinen Konstanten in app.py (INK / ACCENT / MUTED / LINE),
+# damit UI-Theme und deine inline gesetzten HTML-Farben aus einer Quelle stammen.
+
+[theme]
+# Light-Modus fest verdrahtet: deine eigenen HTML-Blöcke (Hebel-Karten, Kopf, Hinweise)
+# setzen dunkle Schrift auf hellen Grund. Ohne diese Zeile würde ein Besucher mit
+# Dark-Mode-Voreinstellung dunkle Schrift auf dunklem Grund sehen -> unlesbar.
+base = "light"
+
+primaryColor = "#0E6E6E"            # ACCENT (Teal) - Regler, Fokus, aktive Elemente
+backgroundColor = "#FFFFFF"         # Hauptfläche
+secondaryBackgroundColor = "#F5F7F7" # Sidebar + Eingabefelder, kühles Hellgrau
+textColor = "#1B1E22"               # INK
+font = "sans serif"
