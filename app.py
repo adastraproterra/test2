@@ -145,7 +145,7 @@ dyn_on      = c3.checkbox("Dyn. Tarif", value=True, key="dyn")
 n14a_on     = c4.checkbox("§14a", value=False, key="n14a") if not is_g else False
 
 t = {"pv": pv_on, "speicher": speicher_on, "dyn": dyn_on, "n14a": n14a_on}
-
+st.sidebar.write(t)
 # ── Sidebar: Speichertechnik ──────────────────────────────────────────────
 # Setzt zellchemie-abhängige Startwerte (Wirkungsgrad, Zyklenlebensdauer),
 # bevor die zugehörigen Zahlenfelder instanziiert werden. Bleibt editierbar.
