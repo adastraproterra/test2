@@ -37,7 +37,37 @@ st.set_page_config(
 )
 
 INK, MUTED, LINE, ACCENT = "#1B1E22", "#6A7078", "#E1E4E7", "#0E6E6E"
+# ── Feinschliff: Streamlit-Chrome ausblenden + dezente Politur ─────────────
+st.markdown(f"""
+<style>
+  /* Baukasten-Elemente entfernen, die nach "irgendeine Streamlit-App" aussehen */
+  #MainMenu {{visibility: hidden;}}
+  footer {{visibility: hidden;}}
+  [data-testid="stToolbar"] {{visibility: hidden; height: 0;}}
+  [data-testid="stDecoration"] {{display: none;}}
+  [data-testid="stStatusWidget"] {{visibility: hidden;}}
+  .stDeployButton, [data-testid="stAppDeployButton"] {{display: none;}}
+  header[data-testid="stHeader"] {{background: transparent;}}
 
+  /* Inhaltsbreite begrenzen und Kopfabstand setzen (bessere Lesbarkeit) */
+  .block-container {{padding-top: 2.4rem; padding-bottom: 3rem; max-width: 1120px;}}
+
+  /* Kennzahlen ruhiger: große Zahl, gedämpftes Label */
+  [data-testid="stMetricValue"] {{font-size: 1.9rem; letter-spacing: -0.02em; color: {INK};}}
+  [data-testid="stMetricLabel"] p {{color: {MUTED}; font-size: 0.82rem;}}
+  [data-testid="stMetricDelta"] {{color: {MUTED};}}
+
+  /* Sidebar abgrenzen */
+  section[data-testid="stSidebar"] {{border-right: 1px solid {LINE};}}
+  section[data-testid="stSidebar"] .block-container {{padding-top: 1.4rem;}}
+
+  /* Bedienelemente */
+  .stButton > button {{border-radius: 8px; font-weight: 600;}}
+
+  /* Überschriften enger an deine Marke rücken */
+  h2, h3 {{letter-spacing: -0.01em;}}
+</style>
+""", unsafe_allow_html=True)
 # Feld-Metadaten: label, einheit, step, nachkommastellen
 FIELDS = {
     "verbrauch": ("Jahresverbrauch", "kWh/a", 100.0, 0),
